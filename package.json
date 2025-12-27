@@ -1,0 +1,31 @@
+{
+  "name": "helium-drm",
+  "version": "1.0.0",
+  "module": "cli.ts",
+  "type": "module",
+  "bin": {
+    "fix-helium-drm": "./cli.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build cli.ts --compile --outfile ./dist/fix-helium-drm"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "pino-pretty": "^13.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "7zip-min": "^2.1.0",
+    "@agent-infra/browser-finder": "^0.2.1",
+    "chalk": "^5.6.2",
+    "commander": "^12.1.0",
+    "ora": "^9.0.0",
+    "pino": "^9.6.0",
+    "zod": "^3.22.4"
+  }
+}
