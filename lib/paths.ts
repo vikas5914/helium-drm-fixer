@@ -172,12 +172,13 @@ export async function findChromeWidevinePath(): Promise<string | null> {
 }
 
 /**
- * Find Helium browser WidevineCdm target path
+ * Find Helium browser WidevineCdm target paths
  */
-export async function findHeliumVersionPath(): Promise<string | null> {
+export async function findHeliumVersionPaths(): Promise<string[]> {
   const log = getLogger();
   const platform = getPlatform();
   let basePaths: string[] = [];
+  const foundPaths: string[] = [];
 
   if (platform === "win32") {
     const localAppData =
@@ -202,6 +203,12 @@ export async function findHeliumVersionPath(): Promise<string | null> {
         "Helium",
         "Application"
       ),
+      join(
+        homedir(),
+        "Library",
+        "Application Support",
+        "net.imput.helium"
+      ),
     ];
   } else {
     basePaths = [join(homedir(), ".config", "Helium", "Application")];
@@ -225,6 +232,7 @@ export async function findHeliumVersionPath(): Promise<string | null> {
 
     try {
       const entries = await readdir(basePath, { withFileTypes: true });
+      let versionFoundInThisBase = false;
 
       for (const entry of entries) {
         if (entry.isDirectory() && /^\d+\.\d+\.\d+\.\d+$/.test(entry.name)) {
@@ -243,16 +251,25 @@ export async function findHeliumVersionPath(): Promise<string | null> {
           }
 
           log.info(`✓ Found Helium version folder: ${versionPath}`);
-          return versionPath;
+          foundPaths.push(versionPath);
+          versionFoundInThisBase = true;
         }
+      }
+
+      // Special case for net.imput.helium where Widevine might be at the root
+      if (!versionFoundInThisBase && basePath.endsWith("net.imput.helium")) {
+        log.info(`✓ Using Helium profile root for Widevine: ${basePath}`);
+        foundPaths.push(basePath);
       }
     } catch (err) {
       log.info(`✗ Failed to read directory: ${basePath}`);
     }
   }
 
-  log.info(`✗ No valid Helium version folder found`);
-  return null;
+  if (foundPaths.length === 0) {
+    log.info(`✗ No valid Helium version folder found`);
+  }
+  return foundPaths;
 }
 
 /**
