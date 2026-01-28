@@ -45,8 +45,8 @@ bun run build
 
 If this script fails to find your browser, you can specify the path to it manually:
 
-```
-bun run cli.ts --chrome-path /usr/bin/google-chrome-stable --helium-path /usr/bin/helium-browser
+```bash
+sudo bun run cli.ts --chrome-path /usr/bin/google-chrome-stable --helium-path /usr/bin/helium-browser
 ```
 
 You can find the path on your system by running `which google-chrome-stable` on macOS and Linux.
