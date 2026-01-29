@@ -71,8 +71,6 @@ export async function findChromeWidevinePath(): Promise<string | null> {
       const versionsPath = join(
         dirname(chromePath),
         "..",
-        "..",
-        "..",
         "Frameworks",
         "Google Chrome Framework.framework",
         "Versions"
@@ -80,40 +78,55 @@ export async function findChromeWidevinePath(): Promise<string | null> {
 
       log.info(`Scanning Chrome Versions directory: ${versionsPath}`);
 
-      const entries = await readdir(versionsPath, { withFileTypes: true });
+      let entries: any[] = [];
+      try {
+        entries = await readdir(versionsPath, { withFileTypes: true });
+      } catch (err) {
+        log.info(`✗ Failed to read Versions directory: ${versionsPath}`);
+      }
 
       for (const entry of entries) {
         if (entry.isDirectory() && /^\d+\.\d+\.\d+\.\d+$/.test(entry.name)) {
-          const versionWidevine = join(
-            versionsPath,
-            entry.name,
-            "WidevineCdm.plugin"
-          );
-          log.info(`Checking path: ${versionWidevine}`);
-          try {
-            const stats = await stat(versionWidevine);
-            if (stats.isDirectory()) {
-              log.info(`✓ Found WidevineCdm at: ${versionWidevine}`);
-              widevinePath = versionWidevine;
-              break;
+          // Check for both modern (Libraries/WidevineCdm) and legacy (WidevineCdm.plugin) paths
+          const pathsToTry = [
+            join(versionsPath, entry.name, "Libraries", "WidevineCdm"),
+            join(versionsPath, entry.name, "WidevineCdm.plugin"),
+          ];
+
+          for (const versionWidevine of pathsToTry) {
+            log.info(`Checking path: ${versionWidevine}`);
+            try {
+              const stats = await stat(versionWidevine);
+              if (stats.isDirectory()) {
+                log.info(`✓ Found WidevineCdm at: ${versionWidevine}`);
+                widevinePath = versionWidevine;
+                break;
+              }
+            } catch {
+              log.info(`✗ Path does not exist: ${versionWidevine}`);
             }
-          } catch {
-            log.info(`✗ Path does not exist: ${versionWidevine}`);
           }
+          if (widevinePath) break;
         }
       }
 
       if (!widevinePath) {
-        const fallbackPath = join(versionsPath, "A", "WidevineCdm.plugin");
-        log.info(`Checking fallback path: ${fallbackPath}`);
-        try {
-          const stats = await stat(fallbackPath);
-          if (stats.isDirectory()) {
-            log.info(`✓ Found WidevineCdm at: ${fallbackPath}`);
-            widevinePath = fallbackPath;
+        const fallbackPaths = [
+          join(versionsPath, "A", "Libraries", "WidevineCdm"),
+          join(versionsPath, "A", "WidevineCdm.plugin"),
+        ];
+        for (const fallbackPath of fallbackPaths) {
+          log.info(`Checking fallback path: ${fallbackPath}`);
+          try {
+            const stats = await stat(fallbackPath);
+            if (stats.isDirectory()) {
+              log.info(`✓ Found WidevineCdm at: ${fallbackPath}`);
+              widevinePath = fallbackPath;
+              break;
+            }
+          } catch {
+            log.info(`✗ Fallback path does not exist: ${fallbackPath}`);
           }
-        } catch {
-          log.info(`✗ Fallback path does not exist: ${fallbackPath}`);
         }
       }
     } else {
@@ -159,58 +172,104 @@ export async function findChromeWidevinePath(): Promise<string | null> {
 }
 
 /**
- * Find Helium browser WidevineCdm target path
+ * Find Helium browser WidevineCdm target paths
  */
-export async function findHeliumVersionPath(): Promise<string | null> {
+export async function findHeliumVersionPaths(): Promise<string[]> {
   const log = getLogger();
   const platform = getPlatform();
-  let basePath: string;
+  let basePaths: string[] = [];
+  const foundPaths: string[] = [];
 
   if (platform === "win32") {
     const localAppData =
       process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local");
-    basePath = join(localAppData, "imput", "Helium", "Application");
+    basePaths = [join(localAppData, "imput", "Helium", "Application")];
   } else if (platform === "darwin") {
-    basePath = join(
-      homedir(),
-      "Library",
-      "Application Support",
-      "Helium",
-      "Application"
-    );
+    basePaths = [
+      "/Applications/Helium.app/Contents/Frameworks/Helium Framework.framework/Versions",
+      join(
+        homedir(),
+        "Applications",
+        "Helium.app",
+        "Contents",
+        "Frameworks",
+        "Helium Framework.framework",
+        "Versions"
+      ),
+      join(
+        homedir(),
+        "Library",
+        "Application Support",
+        "Helium",
+        "Application"
+      ),
+      join(
+        homedir(),
+        "Library",
+        "Application Support",
+        "net.imput.helium"
+      ),
+    ];
   } else {
-    basePath = join(homedir(), ".config", "Helium", "Application");
+    basePaths = [join(homedir(), ".config", "Helium", "Application")];
   }
 
-  log.info(`Checking Helium base path: ${basePath}`);
+  for (const basePath of basePaths) {
+    log.info(`Checking Helium base path: ${basePath}`);
 
-  try {
-    const baseStats = await stat(basePath);
-    if (!baseStats.isDirectory()) {
-      log.info(`✗ Base path is not a directory: ${basePath}`);
-      return null;
+    try {
+      const baseStats = await stat(basePath);
+      if (!baseStats.isDirectory()) {
+        log.info(`✗ Base path is not a directory: ${basePath}`);
+        continue;
+      }
+    } catch {
+      log.info(`✗ Base path does not exist: ${basePath}`);
+      continue;
     }
-  } catch {
-    log.info(`✗ Base path does not exist: ${basePath}`);
-    return null;
-  }
 
-  log.info(`Scanning for Helium version folders in: ${basePath}`);
+    log.info(`Scanning for Helium version folders in: ${basePath}`);
 
-  const entries = await readdir(basePath, { withFileTypes: true });
+    try {
+      const entries = await readdir(basePath, { withFileTypes: true });
+      let versionFoundInThisBase = false;
 
-  for (const entry of entries) {
-    if (entry.isDirectory() && /^\d+\.\d+\.\d+\.\d+$/.test(entry.name)) {
-      const versionPath = join(basePath, entry.name);
+      for (const entry of entries) {
+        if (entry.isDirectory() && /^\d+\.\d+\.\d+\.\d+$/.test(entry.name)) {
+          let versionPath = join(basePath, entry.name);
 
-      log.info(`✓ Found Helium version folder: ${versionPath}`);
-      return versionPath;
+          // If we're inside a Framework, we might need to go into Libraries
+          const librariesPath = join(versionPath, "Libraries");
+          try {
+            const libStats = await stat(librariesPath);
+            if (libStats.isDirectory()) {
+              log.info(`✓ Found Libraries directory in Helium: ${librariesPath}`);
+              versionPath = librariesPath;
+            }
+          } catch {
+            // No Libraries folder, use versionPath directly
+          }
+
+          log.info(`✓ Found Helium version folder: ${versionPath}`);
+          foundPaths.push(versionPath);
+          versionFoundInThisBase = true;
+        }
+      }
+
+      // Special case for net.imput.helium where Widevine might be at the root
+      if (!versionFoundInThisBase && basePath.endsWith("net.imput.helium")) {
+        log.info(`✓ Using Helium profile root for Widevine: ${basePath}`);
+        foundPaths.push(basePath);
+      }
+    } catch (err) {
+      log.info(`✗ Failed to read directory: ${basePath}`);
     }
   }
 
-  log.info(`✗ No valid Helium version folder found`);
-
-  return null;
+  if (foundPaths.length === 0) {
+    log.info(`✗ No valid Helium version folder found`);
+  }
+  return foundPaths;
 }
 
 /**

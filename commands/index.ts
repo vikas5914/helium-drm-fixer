@@ -1,4 +1,4 @@
-import { findChromeWidevinePath, findHeliumVersionPath } from "../lib/paths";
+import { findChromeWidevinePath, findHeliumVersionPaths } from "../lib/paths";
 import { copyDir } from "../lib/utils";
 import { initLogger, type Logger } from "../lib/logger";
 import { downloadAndExtractChrome } from "../lib/chrome-downloader";
@@ -48,22 +48,22 @@ async function getChromeWidevinePath(
   return chromeWidevinePath;
 }
 
-async function getHeliumVersionPath(
+async function getHeliumVersionPaths(
   logger: Logger,
   spinner: ReturnType<typeof ora>,
   options: FixHeliumDrmOptions
-): Promise<string> {
+): Promise<string[]> {
   if (options.heliumPath) {
     logger.info(`Using custom Helium path: ${options.heliumPath}`);
     spinner.succeed(
       chalk.green(`Using custom Helium path: ${options.heliumPath}`)
     );
-    return options.heliumPath;
+    return [options.heliumPath];
   }
 
-  const heliumVersionPath = await findHeliumVersionPath();
+  const heliumVersionPaths = await findHeliumVersionPaths();
 
-  if (!heliumVersionPath) {
+  if (heliumVersionPaths.length === 0) {
     spinner.fail(chalk.red("Helium browser not found"));
     console.log(chalk.yellow("\n⚠️  Please install Helium first."));
     console.log(chalk.blue("   Download from: https://helium.is/\n"));
@@ -71,9 +71,13 @@ async function getHeliumVersionPath(
     process.exit(1);
   }
 
-  spinner.succeed(chalk.green(`Found Helium at: ${heliumVersionPath}`));
-  logger.info(`Found Helium at: ${heliumVersionPath}`);
-  return heliumVersionPath;
+  spinner.succeed(
+    chalk.green(`Found ${heliumVersionPaths.length} Helium location(s)`)
+  );
+  for (const p of heliumVersionPaths) {
+    logger.info(`Found Helium at: ${p}`);
+  }
+  return heliumVersionPaths;
 }
 
 export async function fixHeliumDrm(options: FixHeliumDrmOptions = {}) {
@@ -100,13 +104,11 @@ export async function fixHeliumDrm(options: FixHeliumDrmOptions = {}) {
   const heliumSpinner = ora("Looking for Helium installation...").start();
   logger.info("Looking for Helium installation...");
 
-  const heliumVersionPath = await getHeliumVersionPath(
+  const heliumVersionPaths = await getHeliumVersionPaths(
     logger,
     heliumSpinner,
     options
   );
-
-  const heliumWidevinePath = join(heliumVersionPath, "WidevineCdm");
 
   if (options.check) {
     console.log(chalk.bold.green("\n✅ Check complete. Fix can be applied.\n"));
@@ -114,30 +116,35 @@ export async function fixHeliumDrm(options: FixHeliumDrmOptions = {}) {
     return;
   }
 
-  if (options.dryRun) {
-    console.log(chalk.bold.yellow("\n🔍 Dry run - no changes made."));
-    console.log(chalk.dim(`   Would copy: ${chromeWidevinePath}`));
-    console.log(chalk.dim(`   To: ${heliumWidevinePath}\n`));
-    logger.info("Dry run complete", {
-      source: chromeWidevinePath,
-      dest: heliumWidevinePath,
-    });
-    return;
-  }
+  for (const heliumVersionPath of heliumVersionPaths) {
+    const heliumWidevinePath = join(heliumVersionPath, "WidevineCdm");
 
-  const copySpinner = ora(
-    "Copying WidevineCdm from Chrome to Helium..."
-  ).start();
-  logger.info("Copying WidevineCdm from Chrome to Helium...");
+    if (options.dryRun) {
+      console.log(chalk.bold.yellow("\n🔍 Dry run - no changes made."));
+      console.log(chalk.dim(`   Would copy: ${chromeWidevinePath}`));
+      console.log(chalk.dim(`   To: ${heliumWidevinePath}\n`));
+      logger.info("Dry run complete", {
+        source: chromeWidevinePath,
+        dest: heliumWidevinePath,
+      });
+      continue;
+    }
 
-  try {
-    await copyDir(chromeWidevinePath, heliumWidevinePath);
-    copySpinner.succeed(chalk.green("WidevineCdm copied successfully!"));
-    logger.info("WidevineCdm copied successfully!");
-  } catch (error) {
-    copySpinner.fail(chalk.red("Failed to copy WidevineCdm"));
-    logger.error("Failed to copy WidevineCdm", { error });
-    process.exit(1);
+    const copySpinner = ora(
+      `Copying WidevineCdm to ${heliumWidevinePath}...`
+    ).start();
+    logger.info(`Copying WidevineCdm to ${heliumWidevinePath}...`);
+
+    try {
+      await copyDir(chromeWidevinePath, heliumWidevinePath);
+      copySpinner.succeed(
+        chalk.green(`WidevineCdm copied to ${heliumWidevinePath}`)
+      );
+      logger.info(`WidevineCdm copied to ${heliumWidevinePath}`);
+    } catch (error) {
+      copySpinner.fail(chalk.red(`Failed to copy to ${heliumWidevinePath}`));
+      logger.error(`Failed to copy to ${heliumWidevinePath}`, { error });
+    }
   }
 
   console.log(
