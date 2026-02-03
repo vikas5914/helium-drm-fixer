@@ -71,8 +71,6 @@ export async function findChromeWidevinePath(): Promise<string | null> {
       const versionsPath = join(
         dirname(chromePath),
         "..",
-        "..",
-        "..",
         "Frameworks",
         "Google Chrome Framework.framework",
         "Versions"
@@ -87,7 +85,8 @@ export async function findChromeWidevinePath(): Promise<string | null> {
           const versionWidevine = join(
             versionsPath,
             entry.name,
-            "WidevineCdm.plugin"
+            "Libraries",
+            "WidevineCdm"
           );
           log.info(`Checking path: ${versionWidevine}`);
           try {
@@ -100,20 +99,6 @@ export async function findChromeWidevinePath(): Promise<string | null> {
           } catch {
             log.info(`✗ Path does not exist: ${versionWidevine}`);
           }
-        }
-      }
-
-      if (!widevinePath) {
-        const fallbackPath = join(versionsPath, "A", "WidevineCdm.plugin");
-        log.info(`Checking fallback path: ${fallbackPath}`);
-        try {
-          const stats = await stat(fallbackPath);
-          if (stats.isDirectory()) {
-            log.info(`✓ Found WidevineCdm at: ${fallbackPath}`);
-            widevinePath = fallbackPath;
-          }
-        } catch {
-          log.info(`✗ Fallback path does not exist: ${fallbackPath}`);
         }
       }
     } else {
@@ -172,11 +157,12 @@ export async function findHeliumVersionPath(): Promise<string | null> {
     basePath = join(localAppData, "imput", "Helium", "Application");
   } else if (platform === "darwin") {
     basePath = join(
-      homedir(),
-      "Library",
-      "Application Support",
-      "Helium",
-      "Application"
+      "/Applications",
+      "Helium.app",
+      "Contents",
+      "Frameworks",
+      "Helium Framework.framework",
+      "Versions"
     );
   } else {
     basePath = join(homedir(), ".config", "Helium", "Application");
@@ -201,7 +187,10 @@ export async function findHeliumVersionPath(): Promise<string | null> {
 
   for (const entry of entries) {
     if (entry.isDirectory() && /^\d+\.\d+\.\d+\.\d+$/.test(entry.name)) {
-      const versionPath = join(basePath, entry.name);
+      const versionPath =
+        platform === "darwin"
+          ? join(basePath, entry.name, "Libraries")
+          : join(basePath, entry.name);
 
       log.info(`✓ Found Helium version folder: ${versionPath}`);
       return versionPath;

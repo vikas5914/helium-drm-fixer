@@ -1,9 +1,13 @@
-import { findChromeWidevinePath, findHeliumVersionPath } from "../lib/paths";
+import { findChromeWidevinePath, findHeliumVersionPath, getPlatform } from "../lib/paths";
 import { copyDir } from "../lib/utils";
 import { initLogger, type Logger } from "../lib/logger";
 import { downloadAndExtractChrome } from "../lib/chrome-downloader";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import ora from "ora";
+
+const execFileAsync = promisify(execFile);
 import chalk from "chalk";
 
 export interface FixHeliumDrmOptions {
@@ -138,6 +142,24 @@ export async function fixHeliumDrm(options: FixHeliumDrmOptions = {}) {
     copySpinner.fail(chalk.red("Failed to copy WidevineCdm"));
     logger.error("Failed to copy WidevineCdm", { error });
     process.exit(1);
+  }
+
+  if (getPlatform() === "darwin") {
+    const signSpinner = ora("Re-signing Helium.app to include WidevineCdm...").start();
+    logger.info("Re-signing Helium.app after modifying framework contents...");
+
+    try {
+      const heliumAppPath = "/Applications/Helium.app";
+      await execFileAsync("xattr", ["-cr", heliumAppPath]);
+      await execFileAsync("codesign", ["--force", "--deep", "--sign", "-", heliumAppPath]);
+      signSpinner.succeed(chalk.green("Helium.app re-signed successfully"));
+      logger.info("Helium.app re-signed successfully");
+    } catch (error) {
+      signSpinner.fail(chalk.red("Failed to re-sign Helium.app"));
+      logger.error("Failed to re-sign Helium.app", { error });
+      console.log(chalk.yellow("\n⚠️  You may need to run with sudo, or manually run:"));
+      console.log(chalk.dim('   codesign --force --deep --sign - "/Applications/Helium.app"\n'));
+    }
   }
 
   console.log(
