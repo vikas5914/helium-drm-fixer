@@ -1,7 +1,7 @@
 import { BrowserFinder } from "@agent-infra/browser-finder";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { readdir, stat } from "node:fs/promises";
+import { readdir, stat, realpath } from "node:fs/promises";
 import { getLogger } from "./logger";
 
 export interface PlatformPaths {
@@ -103,9 +103,21 @@ export async function findChromeWidevinePath(): Promise<string | null> {
       }
     } else {
       const chromePath = chrome.path;
-      const chromeDir = dirname(chromePath);
-      const directPath = join(chromeDir, "WidevineCdm");
+      let chromeDir = dirname(chromePath);
 
+      // On Linux, chrome.path is often a wrapper script in /usr/bin.
+      // Try resolving symlinks to find the real Chrome install directory.
+      try {
+        const resolved = await realpath(chromePath);
+        if (resolved !== chromePath) {
+          chromeDir = dirname(resolved);
+          log.info(`Resolved Chrome symlink to: ${chromeDir}`);
+        }
+      } catch {
+        // ignore - continue with original path
+      }
+
+      const directPath = join(chromeDir, "WidevineCdm");
       log.info(`Checking direct path: ${directPath}`);
 
       try {
@@ -132,6 +144,29 @@ export async function findChromeWidevinePath(): Promise<string | null> {
             } catch {
               log.info(`✗ Path does not exist: ${versionPath}`);
             }
+          }
+        }
+      }
+
+      // Fallback: check well-known Linux Chrome installation directories
+      if (!widevinePath) {
+        const knownPaths = [
+          "/opt/google/chrome/WidevineCdm",
+          "/opt/google/chrome-beta/WidevineCdm",
+          "/usr/lib/chromium/WidevineCdm",
+          "/usr/lib/chromium-browser/WidevineCdm",
+        ];
+        for (const knownPath of knownPaths) {
+          log.info(`Checking known Chrome path: ${knownPath}`);
+          try {
+            const stats = await stat(knownPath);
+            if (stats.isDirectory()) {
+              log.info(`✓ Found WidevineCdm at: ${knownPath}`);
+              widevinePath = knownPath;
+              break;
+            }
+          } catch {
+            log.info(`✗ Path does not exist: ${knownPath}`);
           }
         }
       }
@@ -165,6 +200,11 @@ export async function findHeliumVersionPath(): Promise<string | null> {
       "Versions"
     );
   } else {
+    // Linux: check system package installations first
+    const systemInstall = await findHeliumLinuxInstall(log);
+    if (systemInstall) return systemInstall;
+
+    // Fall back to user config path with version subdirectories
     basePath = join(homedir(), ".config", "Helium", "Application");
   }
 
@@ -198,6 +238,84 @@ export async function findHeliumVersionPath(): Promise<string | null> {
   }
 
   log.info(`✗ No valid Helium version folder found`);
+
+  return null;
+}
+
+/**
+ * Find Helium's user data directory on Linux.
+ * Chromium loads WidevineCdm from the user data dir using the component updater format.
+ */
+export async function findHeliumUserDataDir(): Promise<string | null> {
+  const log = getLogger();
+  const candidates = [
+    join(homedir(), ".config", "net.imput.helium"),
+    join(homedir(), ".config", "Helium"),
+    join(homedir(), ".config", "helium"),
+  ];
+
+  for (const dir of candidates) {
+    log.info(`Checking Helium user data dir: ${dir}`);
+    try {
+      const stats = await stat(dir);
+      if (stats.isDirectory()) {
+        log.info(`✓ Found Helium user data dir: ${dir}`);
+        return dir;
+      }
+    } catch {
+      log.info(`✗ Path does not exist: ${dir}`);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Find Helium system installation on Linux.
+ * Handles flat directory layouts (e.g. /opt/helium-browser-bin/) used by
+ * distro packages where there are no version subdirectories.
+ */
+async function findHeliumLinuxInstall(
+  log: ReturnType<typeof getLogger>
+): Promise<string | null> {
+  const candidates: string[] = [];
+
+  // Try resolving the helium-browser binary symlink to find the install dir
+  for (const binPath of ["/usr/bin/helium-browser", "/usr/bin/helium"]) {
+    try {
+      const resolved = await realpath(binPath);
+      const dir = dirname(resolved);
+      if (!candidates.includes(dir)) {
+        candidates.push(dir);
+      }
+    } catch {
+      // not found
+    }
+  }
+
+  // Known system package locations
+  if (!candidates.includes("/opt/helium-browser-bin")) {
+    candidates.push("/opt/helium-browser-bin");
+  }
+
+  for (const candidate of candidates) {
+    log.info(`Checking Linux Helium system path: ${candidate}`);
+    try {
+      const stats = await stat(candidate);
+      if (!stats.isDirectory()) continue;
+
+      // Verify this is a Helium installation by checking for the helium binary
+      try {
+        await stat(join(candidate, "helium"));
+        log.info(`✓ Found Helium system installation: ${candidate}`);
+        return candidate;
+      } catch {
+        log.info(`✗ No helium binary in: ${candidate}`);
+      }
+    } catch {
+      log.info(`✗ Path does not exist: ${candidate}`);
+    }
+  }
 
   return null;
 }
