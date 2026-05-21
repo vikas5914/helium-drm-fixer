@@ -4,7 +4,7 @@ A CLI tool that fixes DRM issues in the Helium browser by copying WidevineCdm fr
 
 ## Why Helium DRM?
 
-Helium browser often has issues with DRM-protected content because it doesn't include WidevineCdm. This tool automatically copies WidevineCdm from your Chrome installation to Helium, enabling DRM support for streaming services like Netflix, Disney+, etc.
+Helium browser often has issues with DRM-protected content because it doesn't include WidevineCdm. This tool automatically copies WidevineCdm from your Chrome installation to Helium, enabling basic Widevine support for sites that accept it.
 
 ## Installation
 
@@ -31,6 +31,12 @@ bun run build
 2. **Finds Helium installation**: Locates your Helium browser installation.
 3. **Copies WidevineCdm**: Copies the WidevineCdm files from Chrome to Helium.
 4. **Automatic download**: If Chrome is not found locally, the tool will download it from GitHub releases (Windows only).
+
+## Limitations
+
+This tool only makes Helium able to load Widevine. It does not change Helium's Chromium build, browser identity, codecs, HDCP support, Widevine certification, or Verified Media Path status.
+
+That is why DRM can work on some sites, such as YouTube or Crunchyroll, but still fail on stricter services such as Netflix or Amazon Prime Video. Those services can require an approved browser, output protection, VMP, or other license-server checks that copying `WidevineCdm` cannot satisfy.
 
 ## Features
 
