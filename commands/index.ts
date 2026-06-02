@@ -20,6 +20,40 @@ export interface FixHeliumDrmOptions {
   forceDownload?: boolean;
 }
 
+function isPermissionError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === "EACCES" || error.code === "EPERM")
+  );
+}
+
+function isRunningAsRoot(): boolean {
+  return typeof process.getuid === "function" && process.getuid() === 0;
+}
+
+function formatErrorDetails(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const details = ["code", "syscall", "path"]
+      .map((key) =>
+        key in error
+          ? `${key}=${String((error as Record<string, unknown>)[key])}`
+          : null
+      )
+      .filter(Boolean)
+      .join(", ");
+
+    if (details) return details;
+  }
+
+  return String(error);
+}
+
 async function getChromeWidevinePath(
   logger: Logger,
   spinner: ReturnType<typeof ora>,
@@ -112,8 +146,9 @@ export async function fixHeliumDrm(options: FixHeliumDrmOptions = {}) {
   );
 
   let heliumWidevinePath: string;
+  const platform = getPlatform();
 
-  if (getPlatform() === "linux") {
+  if (platform === "linux") {
     // On Linux, Chromium loads WidevineCdm from the user data directory
     // using the component updater format: <user-data>/WidevineCdm/<version>/
     const manifest = JSON.parse(
@@ -160,7 +195,7 @@ export async function fixHeliumDrm(options: FixHeliumDrmOptions = {}) {
     await copyDir(chromeWidevinePath, heliumWidevinePath);
 
     // On Linux, write the component updater hint file so Chromium finds the CDM
-    if (getPlatform() === "linux") {
+    if (platform === "linux") {
       const hintFile = join(dirname(heliumWidevinePath), "latest-component-updated-widevine-cdm");
       await writeFile(hintFile, JSON.stringify({ Path: heliumWidevinePath }));
       logger.info(`Wrote hint file: ${hintFile}`);
@@ -171,6 +206,23 @@ export async function fixHeliumDrm(options: FixHeliumDrmOptions = {}) {
   } catch (error) {
     copySpinner.fail(chalk.red("Failed to copy WidevineCdm"));
     logger.error("Failed to copy WidevineCdm", { error });
+
+    if (isPermissionError(error) && platform === "darwin" && isRunningAsRoot()) {
+      console.log(chalk.yellow("\n⚠️  macOS still denied writing inside Helium.app, even as root."));
+      console.log(chalk.dim("   Grant App Management to your terminal app in System Settings > Privacy & Security."));
+      console.log(chalk.dim("   Quit and reopen the terminal after granting it, then re-run: sudo bun run cli.ts"));
+      console.log(chalk.dim("   If it still fails, grant Full Disk Access to the terminal app too."));
+      console.log(chalk.dim(`   ${formatErrorDetails(error)}\n`));
+    } else if (isPermissionError(error)) {
+      console.log(chalk.yellow("\n⚠️  Helium is installed under /Applications, which requires admin permissions to modify."));
+      console.log(chalk.dim("   Re-run with sudo: sudo bun run cli.ts"));
+      console.log(chalk.dim(`   ${formatErrorDetails(error)}\n`));
+    } else if (options.verbose) {
+      console.log(chalk.dim(`\n   ${formatErrorDetails(error)}\n`));
+    } else {
+      console.log(chalk.dim("\n   Re-run with --verbose to see the underlying filesystem error.\n"));
+    }
+
     process.exit(1);
   }
 
